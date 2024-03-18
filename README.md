@@ -1,4 +1,4 @@
-# Creating an application with a Quarkus code sample
+# Creating an application with a Quarkus code sample.
 
 **Note:** The Quarkus code sample uses the **8081** 
 
