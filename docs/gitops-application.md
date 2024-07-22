@@ -7,31 +7,61 @@ The following day 2 edit/update operations supported:
     set/get image - updates the image for this component 
     set/get replicas
 
-127.0.0.1 - - [22/Jul/2024 15:08:24] "POST /analyze HTTP/1.1" 500 -
+from flask import Blueprint, request, jsonify, render_template
+import markdown
+from .mstp_rules import analyze_content
+
+main = Blueprint('main', __name__)
+
+feedback_list = []
+document_content = ""
+
+@main.route('/')
+def index():
+    return render_template('index.html')
+
+@main.route('/upload', methods=['POST'])
+def upload_file():
+    global document_content
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part"})
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"})
+    if file:
+        content = file.read().decode('utf-8')
+        document_content = content
+        html_content = markdown.markdown(content)
+        suggestions = analyze_content(content)
+        return jsonify({"message": "File uploaded successfully", "content": html_content, "suggestions": suggestions})
+
+@main.route('/feedback', methods=['POST'])
+def submit_feedback():
+    data = request.get_json()
+    feedback = data.get('feedback')
+    feedback_list.append(feedback)
+    return jsonify({"message": "Feedback submitted successfully", "feedback_list": feedback_list})
+
+@main.route('/feedbacks', methods=['GET'])
+def get_feedbacks():
+    return jsonify({"feedback_list": feedback_list})
+
+
+python run.py
 Traceback (most recent call last):
-  File "/home/gtrivedi/Desktop/demo/demo_env/lib64/python3.12/site-packages/flask/app.py", line 1498, in __call__
-    return self.wsgi_app(environ, start_response)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/gtrivedi/Desktop/demo/demo_env/lib64/python3.12/site-packages/flask/app.py", line 1476, in wsgi_app
-    response = self.handle_exception(e)
-               ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/gtrivedi/Desktop/demo/demo_env/lib64/python3.12/site-packages/flask/app.py", line 1473, in wsgi_app
-    response = self.full_dispatch_request()
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/gtrivedi/Desktop/demo/demo_env/lib64/python3.12/site-packages/flask/app.py", line 882, in full_dispatch_request
-    rv = self.handle_user_exception(e)
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/gtrivedi/Desktop/demo/demo_env/lib64/python3.12/site-packages/flask/app.py", line 880, in full_dispatch_request
-    rv = self.dispatch_request()
-         ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/gtrivedi/Desktop/demo/demo_env/lib64/python3.12/site-packages/flask/app.py", line 865, in dispatch_request
-    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/gtrivedi/Desktop/demo/app.py", line 50, in analyze
-    yaml_contents = fetch_yaml_files(repo_url, branch)
-                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/gtrivedi/Desktop/demo/app.py", line 16, in fetch_yaml_files
-    response.raise_for_status()
-  File "/home/gtrivedi/Desktop/demo/demo_env/lib64/python3.12/site-packages/requests/models.py", line 1024, in raise_for_status
-    raise HTTPError(http_error_msg, response=self)
-requests.exceptions.HTTPError: 404 Client Error: Not Found for url: https://api.github.com/repos/https://github.com/GT5670/doctest/contents?ref=main
+  File "/home/gtrivedi/Desktop/style.io/run.py", line 3, in <module>
+    app = create_app()
+          ^^^^^^^^^^^^
+  File "/home/gtrivedi/Desktop/style.io/app/__init__.py", line 5, in create_app
+    from .app import main
+  File "/home/gtrivedi/Desktop/style.io/app/app.py", line 3, in <module>
+    from .mstp_rules import analyze_content
+  File "/home/gtrivedi/Desktop/style.io/app/mstp_rules.py", line 4, in <module>
+    nlp = spacy.load("en_core_web_sm")
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gtrivedi/Desktop/style.io/venv/lib64/python3.12/site-packages/spacy/__init__.py", line 51, in load
+    return util.load_model(
+           ^^^^^^^^^^^^^^^^
+  File "/home/gtrivedi/Desktop/style.io/venv/lib64/python3.12/site-packages/spacy/util.py", line 472, in load_model
+    raise IOError(Errors.E050.format(name=name))
+OSError: [E050] Can't find model 'en_core_web_sm'. It doesn't seem to be a Python package or a valid path to a data directory.
