@@ -7,299 +7,172 @@ The following day 2 edit/update operations supported:
     set/get image - updates the image for this component 
     set/get replicas
 
-@edit_routes.route('/opl/edit-product/<string:product_id>', methods=['GET', 'POST'])
-@permissions.opl_editor_permission.require()
-def edit_product_details(product_id):
-    session = current_app.config['Session']()
-    try:
-        logger.debug(f"Route accessed with method: {request.method}")
+from flask import Flask, render_template, flash, session, request, redirect, url_for, g, current_app
+from flask_sqlalchemy import SQLAlchemy
+import flask_saml
+import flask_principal
+from forms import MyForm, SearchForm, EditForm
+from datetime import date
+from models import db, Product, ProductType, ProductTypeMap, ProductPortfolios, ProductPortfolioMap, ProductNotes, ProductReferences, ProductAlias, ProductMktLife, ProductPartners, Partner, ProductComponents, ProductLog
+from datetime import datetime
+from routes.view_routes import view_routes
+from routes.add_routes import add_routes
+from routes.edit_routes import edit_routes
+from user_details import user_details
+import os
+from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy import create_engine
+
+def determine_greeting():
+    current_hour = datetime.now().hour
+    if 5 <= current_hour < 12:
+        return "Good Morning"
+    elif 12 <= current_hour < 18:
+        return "Good Afternoon"
+    else:
+        return "Good Evening"
+
+def create_app(test_config=None):
+    app = Flask(__name__)
+
+    principals = flask_principal.Principal(app)
+
+    app.config['SECRET_KEY'] = 'Dev'
+    app.config['SAML_METADATA_URL'] = os.environ["SAML_METADATA_URL"]
+    app.config['SAML_DEFAULT_REDIRECT'] = '/'
+
+    # Config settings taken from environment variables
+    db_driver = os.environ["DBDRIVER"]
+    pg_user = os.environ["PGUSER"]
+    pg_pass = os.environ["PGPASS"]
+    pg_host = os.environ["PGHOST"]
+    pg_port = os.environ["PGPORT"]
+    pg_db = os.environ["PGDB"]
+
+    # Database URI with SSL configuration
+    app.config['SQLALCHEMY_DATABASE_URI'] = f"{db_driver}://{pg_user}:{pg_pass}@{pg_host}:{pg_port}/{pg_db}"
+    if "REDSHIFT_SSL" in os.environ and os.environ["REDSHIFT_SSL"] == "True":
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+            'connect_args': {
+                'sslmode': 'verify-ca',
+            }
+        }
+    
+    # Introduce connection pooling with create_engine
+    engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'], pool_size=20,  # Maximum of 20 concurrent connections
+                            max_overflow=5,  # Allow 5 additional connections during peak usage
+                            pool_recycle=3600)  # Recycle unused connections after 1 hour
+
+    # Initialize the database (optional, for improved clarity)
+    db.init_app(app)
+
+    # Configure scoped session
+    with app.app_context():
+      Session = scoped_session(sessionmaker(bind=db.engine))
+      app.config['Session'] = Session
+
+    flask_saml.FlaskSAML(app)
+
+    # Actions to perform when a user logs in
+    @flask_saml.saml_authenticated.connect_via(app)
+    def on_saml_authenticated(sender, subject, attributes, auth):
+        # Store the username in the session
+        session['username'] = subject
         
-        # Manual get_or_404 replacement
-        product = retry_db_operation(lambda: session.query(Product).get(product_id))
-        if product is None:
-            abort(404)
+        # We have a logged in user, inform Flask-Principal
+        flask_principal.identity_changed.send(
+            current_app._get_current_object(), identity=get_identity())
+        
+    # Actions to perform when a user logs out
+    @flask_saml.saml_log_out.connect_via(app)
+    def on_saml_logout(sender):
+        # Let Flask-Principal know the user is gone
+        flask_principal.identity_changed.send(
+            current_app._get_current_object(), identity=get_identity())
 
-        product_notes = retry_db_operation(lambda: session.query(ProductNotes).filter_by(product_id=product_id).first())
-        form = EditForm(obj=product)
-        success_message = None
-        show_form = True
+    # Set the user identity for the application
+    @principals.identity_loader
+    def get_identity():
+        if 'saml' in session:
+            return flask_principal.Identity(session['saml']['subject'])
+        else:
+            return flask_principal.AnonymousIdentity()
 
-        # Populate the form with existing data
-        if request.method == 'GET':
-            form.product_note.data = product_notes.product_note if product_notes else ""
+    # Actions to perform after setting the user identity
+    @flask_principal.identity_loaded.connect_via(app)
+    def on_identity_loaded(sender, identity):
+        # Define the permission need for all users
+        identity.provides.add(
+            flask_principal.TypeNeed("all")
+        )
+        if not isinstance(identity, flask_principal.AnonymousIdentity):
+            # Define the permission need for the user's roles
+            if "Role" in session['saml']['attributes'].keys():
+                for role in session['saml']['attributes']['Role']:
+                    identity.provides.add(
+                        flask_principal.RoleNeed(role)
+                    )
+            # Define the permission need for the user's groups
+            if "group" in session['saml']['attributes'].keys():
+                for group in session['saml']['attributes']['group']:
+                    identity.provides.add(
+                        flask_principal.Need('group', group)
+                    )
+            # Define the permission need for an authenticated user
+            identity.provides.add(
+                flask_principal.TypeNeed("authenticated")
+            )
+        else:
+            # Define the permission need for an anonymous user
+            identity.provides.add(
+                flask_principal.TypeNeed("anonymous")
+            )
 
-        # Fetch the associated product types
-        product_types_map = retry_db_operation(lambda: session.query(ProductTypeMap).filter_by(product_id=product_id).all())
-        all_product_types = retry_db_operation(lambda: session.query(ProductType).all())
-        form.product_type.choices = [(ptype.type_id, ptype.product_type) for ptype in all_product_types]
-        form.product_type.data = [ptype_map.type_id for ptype_map in product_types_map]
+    # Set the variable for the username, which we use in our masthead for an
+    # authenticated user.
+    @app.context_processor
+    def get_current_user():
+        needs={}
+        for need in g.identity.provides:
+            if need.method not in needs:
+                needs[need.method]=[]
+            needs[need.method].append(need.value)
+        return dict(user=g.identity.id, needs=needs)
 
-        # Fetch the associated product portfolios
-        product_portfolios_map = retry_db_operation(lambda: session.query(ProductPortfolioMap).filter_by(product_id=product_id).all())
-        all_product_portfolios = retry_db_operation(lambda: session.query(ProductPortfolios).all())
-        form.product_portfolio.choices = [(portfolio.category_id, portfolio.category_name) for portfolio in all_product_portfolios]
-        form.product_portfolio.data = [pportfolio_map.category_id for pportfolio_map in product_portfolios_map]
+    # If a user does not have access to a particular resource, send them
+    # to our 403 page.
+    @app.errorhandler(flask_principal.PermissionDenied)
+    def handle_permission_denied(error):
+        return render_template('403.html'), 403
 
-        # Fetch existing product references
-        logger.info(f"Fetching references for product ID: {product.product_id}")
-        existing_references = retry_db_operation(lambda: session.query(ProductReferences).filter_by(product_id=product.product_id).all())
-        logger.info(f"Existing references fetched: {existing_references}")
-        reference_forms = [EditForm(obj=reference) for reference in existing_references]
+    # handle 404 errors
+    @app.errorhandler(404)
+    def page_not_found(error):
+        return render_template('404.html'), 404
 
+    @app.route("/")
+    def home():
+        greeting = determine_greeting()
+        if 'saml' in session and 'firstName' in session['saml']['attributes']:
+            first_name = session['saml']['attributes']['firstName'][0]
+        else:
+            first_name = "anonymous user"
+        return render_template("index.html", greeting=greeting, first_name=first_name)
 
-        # Fetch existing product aliases
-        existing_aliases = retry_db_operation(lambda: session.query(ProductAlias).filter_by(product_id=product_id).all())
+    # The route definition to view a product.
+    app.register_blueprint(view_routes)
 
-        product_mkt_life = retry_db_operation(lambda: session.query(ProductMktLife).get(product_id))
+    # The route definition to add a product.
+    app.register_blueprint(add_routes)
 
-        if request.method == 'GET':
-            if product_mkt_life:
-                form.product_release.data = product_mkt_life.product_release
-                form.product_release_detail.data = product_mkt_life.product_release_detail
-                form.product_release_link.data = product_mkt_life.product_release_link
-                form.product_eol.data = product_mkt_life.product_eol
-                form.product_eol_detail.data = product_mkt_life.product_eol_detail
-                form.product_eol_link.data = product_mkt_life.product_eol_link
-            else:
-                form.product_release.data = ""
-                form.product_release_detail.data = ""
-                form.product_release_link.data = ""
-                form.product_eol.data = ""
-                form.product_eol_detail.data = ""
-                form.product_eol_link.data = ""
+    # The route definition to edit a product.
+    app.register_blueprint(edit_routes)
 
-        # Fetch the associated product partners
-        existing_product_partners = retry_db_operation(lambda: session.query(ProductPartners).filter_by(product_id=product_id).all())
-        all_partners = retry_db_operation(lambda: session.query(Partner).all())
-        form.partner.choices = [(partner.partner_id, partner.partner_name) for partner in all_partners]
-        form.partner.data = [ppartner.partner_id for ppartner in existing_product_partners]
+    app.register_blueprint(user_details)
 
-        # Fetch existing product components
-        existing_components = retry_db_operation(lambda: session.query(ProductComponents).filter_by(component_id=product_id).all())
+    # Run the application.
+    return app
 
-        form.product_id.choices = [('', 'Select')] + [(str(prod.product_id), prod.product_name) for prod in retry_db_operation(lambda: session.query(Product).order_by(Product.product_name).all())]
-
-        sql_query = text("SELECT * FROM brand_opl.product_log WHERE product_id = :product_id")
-        existing_logs = retry_db_operation(lambda: session.execute(sql_query, {"product_id": product_id}).fetchall())
-
-        if request.method == 'POST':
-            logger.debug("Form data received: %s", request.form)
-            if form.validate_on_submit() or 'submit' in request.form:
-                try:
-                    logger.debug("Starting session transaction")
-                    form.populate_obj(product)
-                    product.last_updated = datetime.now()
-
-                    if not product_notes:
-                        product_notes = ProductNotes(product_id=product_id, product_note=form.product_note.data)
-                        retry_db_operation(lambda: session.add(product_notes))
-                    else:
-                        product_notes.product_note = form.product_note.data
-
-                    existing_product_type_ids = [ptype_map.type_id for ptype_map in product_types_map]
-                    selected_product_type_ids = request.form.getlist('product_type')
-
-                    for product_type_id in selected_product_type_ids:
-                        if product_type_id not in existing_product_type_ids:
-                            new_product_type_map = ProductTypeMap(product_id=product.product_id, type_id=product_type_id)
-                            retry_db_operation(lambda: session.add(new_product_type_map))
-
-                    for ptype_map in product_types_map:
-                        if ptype_map.type_id not in selected_product_type_ids:
-                            retry_db_operation(lambda: session.delete(ptype_map))
-
-                    existing_product_portfolio_ids = [pportfolio_map.category_id for pportfolio_map in product_portfolios_map]
-                    selected_product_portfolio_ids = request.form.getlist('product_portfolio')
-
-                    for product_portfolio_id in selected_product_portfolio_ids:
-                        if product_portfolio_id not in existing_product_portfolio_ids:
-                            new_product_portfolio_map = ProductPortfolioMap(product_id=product.product_id, category_id=product_portfolio_id)
-                            retry_db_operation(lambda: session.add(new_product_portfolio_map))
-
-                    for pportfolio_map in product_portfolios_map:
-                        if pportfolio_map.category_id not in selected_product_portfolio_ids:
-                            retry_db_operation(lambda: session.delete(pportfolio_map))
-
-                    # Collect new references from the form
-                    product_references_data = []
-                    for i in range(len(request.form.getlist('product_link'))):
-                        product_link = request.form.getlist('product_link')[i]
-                        link_description = request.form.getlist('link_description')[i]
-                        if product_link and link_description:
-                            product_references_data.append({'product_link': product_link, 'link_description': link_description})
-
-                    # Update or add new references
-                    existing_references_dict = {ref.product_link: ref for ref in existing_references}
-                    for reference_data in product_references_data:
-                        product_link = reference_data['product_link']
-                        if product_link in existing_references_dict:
-                            existing_reference = existing_references_dict[product_link]
-                            if existing_reference.link_description != reference_data['link_description']:
-                                existing_reference.link_description = reference_data['link_description']
-                                retry_db_operation(lambda: session.add(existing_reference))
-                            # Remove the processed reference from the existing dictionary
-                            del existing_references_dict[product_link]
-                        else:
-                            new_reference = ProductReferences(
-                                product_id=product.product_id,
-                                product_link=product_link,
-                                link_description=reference_data['link_description']
-                            )
-                            retry_db_operation(lambda: session.add(new_reference))
-
-                    # Delete references that were not included in the form
-                    for reference in existing_references_dict.values():
-                        retry_db_operation(lambda: session.delete(reference))
-
-                    for alias in existing_aliases:
-                        alias_name = request.form.get(f'alias_name_{alias.alias_id}')
-                        alias_type = request.form.get(f'alias_type_{alias.alias_id}')
-                        alias_approved = f'alias_approved_{alias.alias_id}' in request.form
-                        previous_name = f'previous_name_{alias.alias_id}' in request.form
-                        tech_docs = f'tech_docs_{alias.alias_id}' in request.form
-                        tech_docs_cli = f'tech_docs_cli_{alias.alias_id}' in request.form
-                        alias_notes = request.form.get(f'alias_notes_{alias.alias_id}')
-
-                        if alias_name:
-                            alias.alias_name = alias_name
-                            alias.alias_type = alias_type
-                            alias.alias_approved = alias_approved
-                            alias.previous_name = previous_name
-                            alias.tech_docs = tech_docs
-                            alias.tech_docs_cli = tech_docs_cli
-                            alias.alias_notes = alias_notes
-                            logger.debug(f"Updating alias: {alias.alias_id} with name: {alias_name}")
-                        else:
-                            logger.debug(f"Deleting alias: {alias.alias_id} with name: {alias.alias_name}")
-                            retry_db_operation(lambda: session.delete(alias))
-
-                    for key in request.form:
-                        if key.startswith('new_alias_name_'):
-                            index = key.split('_')[-1]
-                            new_alias = ProductAlias(
-                                product_id=product_id,
-                                alias_name=request.form.get(f'new_alias_name_{index}'),
-                                alias_type=request.form.get(f'new_alias_type_{index}'),
-                                alias_approved='new_alias_approved_' + index in request.form,
-                                previous_name='new_previous_name_' + index in request.form,
-                                tech_docs='new_tech_docs_' + index in request.form,
-                                tech_docs_cli='new_tech_docs_cli_' + index in request.form,
-                                alias_notes=request.form.get(f'new_alias_notes_{index}')
-                            )
-                            logger.debug(f"Adding new alias: {new_alias.alias_name}")
-                            retry_db_operation(lambda: session.add(new_alias))
-
-                    if product_mkt_life:
-                        logger.debug("Updating existing product marketing life.")
-                        logger.debug(f"Current product release: {product_mkt_life.product_release}")
-                        logger.debug(f"Form product release: {form.product_release.data}")
-                        product_mkt_life.product_release = form.product_release.data
-                        product_mkt_life.product_release_detail = form.product_release_detail.data
-                        product_mkt_life.product_release_link = form.product_release_link.data
-                        product_mkt_life.product_eol = form.product_eol.data
-                        product_mkt_life.product_eol_detail = form.product_eol_detail.data
-                        product_mkt_life.product_eol_link = form.product_eol_link.data
-                        logger.debug(f"Updated product release: {product_mkt_life.product_release}")
-                    
-                    else:
-                        logger.debug(f"Creating a new product marketing life entry.")
-                        product_mkt_life = ProductMktLife(
-                            product_id=product_id,
-                            product_release = form.product_release.data,
-                            product_release_detail=form.product_release_detail.data,
-                            product_release_link=form.product_release_link.data,
-                            product_eol=form.product_eol.data,
-                            product_eol_detail= form.product_eol_detail.data,
-                            product_eol_link=form.product_eol_link.data
-                        )
-                    
-                        session.add(product_mkt_life)
-                        logger.debug(f"New product marketing life created: {product_mkt_life}")
-                        
-
-                    existing_partner_ids = [ppartner.partner_id for ppartner in existing_product_partners]
-                    selected_partner_ids = request.form.getlist('partner')
-
-                    for partner_id in selected_partner_ids:
-                        if partner_id not in existing_partner_ids:
-                            new_product_partner = ProductPartners(product_id=product.product_id, partner_id=partner_id)
-                            retry_db_operation(lambda: session.add(new_product_partner))
-
-                    for ppartner in existing_product_partners:
-                        if ppartner.partner_id not in selected_partner_ids:
-                            retry_db_operation(lambda: session.delete(ppartner))
-
-                    existing_component_ids = [component.component_id for component in product.components]
-                    parent_product_ids = request.form.getlist('product_id[]')
-                    component_types = request.form.getlist('component_type[]')
-
-                    retry_db_operation(lambda: session.query(ProductComponents).filter(
-                        ProductComponents.component_id == product_id,
-                        ProductComponents.product_id.notin_(parent_product_ids)
-                    ).delete(synchronize_session=False))
-
-                    for parent_id, comp_type in zip(parent_product_ids, component_types):
-                        if parent_id and parent_id != 'Select':
-                            existing_component = retry_db_operation(lambda: session.query(ProductComponents).filter_by(
-                                component_id=product_id, product_id=parent_id
-                            ).first())
-
-                            if existing_component:
-                                existing_component.component_type = comp_type
-                            else:
-                                retry_db_operation(lambda: session.add(ProductComponents(
-                                    component_id=product_id,
-                                    product_id=parent_id,
-                                    component_type=comp_type
-                                )))
-
-                    deleted_log_ids = request.form.getlist('deleted_log_ids')
-                    for log_id in deleted_log_ids:
-                        retry_db_operation(lambda: session.query(ProductLog).filter_by(log_id=log_id).delete())
-
-                    existing_log_ids = request.form.getlist('existing_log_id')
-                    for log_id in existing_log_ids:
-                        if log_id not in deleted_log_ids:
-                            log = retry_db_operation(lambda: session.query(ProductLog).filter_by(log_id=log_id, product_id=product_id).first())
-                            if log:
-                                edit_notes_field = f'edit_notes_{log_id}'
-                                edit_date_field = f'edit_date_{log_id}'
-                                if edit_notes_field in request.form and edit_date_field in request.form:
-                                    log.edit_notes = request.form[edit_notes_field]
-                                    log.edit_date = datetime.strptime(request.form[edit_date_field], '%Y-%m-%d').date()
-                                    retry_db_operation(lambda: session.add(log))
-                            else:
-                                logger.debug(f"No log found for log_id: {log_id}")
-
-                    new_edit_notes = request.form.getlist('new_edit_notes')
-                    new_edit_dates = request.form.getlist('new_edit_date')
-                    for notes, date_str in zip(new_edit_notes, new_edit_dates):
-                        if notes:
-                            new_log_date = datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else datetime.utcnow().date()
-                            new_log = ProductLog(
-                                product_id=product_id,
-                                edit_notes=notes,
-                                edit_date=new_log_date,
-                                username=flask_session.get('username')
-                            )
-                            retry_db_operation(lambda: session.add(new_log))
-
-                    retry_db_operation(lambda: session.commit())
-
-                    product_id = product_id
-                    view_link = url_for('view_routes.view_product_details', product_id=product_id)
-                    success_message = f'Successfully updated the product: <a href="{view_link}">{form.product_name.data}</a>'
-                    show_form = False
-
-                except Exception as e:
-                    logger.error(f"Error during form submission: {e}")
-                    session.rollback()
-
-        product_references = retry_db_operation(lambda: session.query(ProductReferences).filter_by(product_id=product_id).all())
-        existing_logs = retry_db_operation(lambda: session.query(ProductLog).filter_by(product_id=product_id).all())
-        existing_aliases = retry_db_operation(lambda: session.query(ProductAlias).filter_by(product_id=product_id).all())
-        form.product_id.choices = [('', 'Select')] + [(str(prod.product_id), prod.product_name) for prod in retry_db_operation(lambda: session.query(Product).order_by(Product.product_name).all())]
-
-        return render_template('opl/edit.html', form=form, product=product, success_message=success_message, show_form=show_form, existing_aliases=existing_aliases, existing_product_partners=existing_product_partners, existing_components=existing_components, existing_logs=existing_logs, reference_forms=reference_forms, user=flask_session.get('username'))
-    finally:
-        session.close()
+if __name__ == '__main__':
+    app = create_app()
+    app.run(debug=True)
