@@ -7,61 +7,23 @@ The following day 2 edit/update operations supported:
     set/get image - updates the image for this component 
     set/get replicas
 
-from flask import Blueprint, request, jsonify, render_template
-import markdown
-from .mstp_rules import analyze_content
+Not sure about the team, but I don't like the current setup of the release notes in our repository. 
+Reasons:
+I have not seen release notes in the assemblies directory.
+Why making it hard when we can keep it simple.
+For a new joiner in our team (not saying we are going to have one... LOL) it'll be easier to understand the repository structure.
 
-main = Blueprint('main', __name__)
+For a couple of projects related to us, here is how:
+This is how RHDH handles their release notes - https://github.com/redhat-developer/red-hat-developers-documentation-rhdh/tree/main/titles
+This is how Openshift handles their release notes - https://github.com/openshift/openshift-docs/tree/main/release_notes
 
-feedback_list = []
-document_content = ""
+I want the best of both the worlds.
 
-@main.route('/')
-def index():
-    return render_template('index.html')
+So this is what I propose:
+Removing release notes from the assemblies directory
+Using the release notes that we have in title
+Then follow, what Openshift does - https://github.com/openshift/openshift-docs/tree/main/release_notes (Clone the repo and you can visualize the things better)
 
-@main.route('/upload', methods=['POST'])
-def upload_file():
-    global document_content
-    if 'file' not in request.files:
-        return jsonify({"error": "No file part"})
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"error": "No selected file"})
-    if file:
-        content = file.read().decode('utf-8')
-        document_content = content
-        html_content = markdown.markdown(content)
-        suggestions = analyze_content(content)
-        return jsonify({"message": "File uploaded successfully", "content": html_content, "suggestions": suggestions})
+The way I see it, this does not require significant restructuring. But if it does, I believe we can move this to 1.3, but remember, then we will have a lot of content to manage and restructure.
 
-@main.route('/feedback', methods=['POST'])
-def submit_feedback():
-    data = request.get_json()
-    feedback = data.get('feedback')
-    feedback_list.append(feedback)
-    return jsonify({"message": "Feedback submitted successfully", "feedback_list": feedback_list})
-
-@main.route('/feedbacks', methods=['GET'])
-def get_feedbacks():
-    return jsonify({"feedback_list": feedback_list})
-
-
-python run.py
-Traceback (most recent call last):
-  File "/home/gtrivedi/Desktop/style.io/run.py", line 3, in <module>
-    app = create_app()
-          ^^^^^^^^^^^^
-  File "/home/gtrivedi/Desktop/style.io/app/__init__.py", line 5, in create_app
-    from .app import main
-  File "/home/gtrivedi/Desktop/style.io/app/app.py", line 3, in <module>
-    from .mstp_rules import analyze_content
-  File "/home/gtrivedi/Desktop/style.io/app/mstp_rules.py", line 4, in <module>
-    nlp = spacy.load("en_core_web_sm")
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/gtrivedi/Desktop/style.io/venv/lib64/python3.12/site-packages/spacy/__init__.py", line 51, in load
-    return util.load_model(
-           ^^^^^^^^^^^^^^^^
-  File "/home/gtrivedi/Desktop/style.io/venv/lib64/python3.12/site-packages/spacy/util.py", line 472, in load_model
-    raise IOError(Errors.E050.format(name=name))
-OSError: [E050] Can't find model 'en_core_web_sm'. It doesn't seem to be a Python package or a valid path to a data directory.
+If you and the team are averse to this proposal we can discuss more.
