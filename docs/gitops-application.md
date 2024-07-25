@@ -7,13 +7,4 @@ The following day 2 edit/update operations supported:
     set/get image - updates the image for this component 
     set/get replicas
 
-{% if product.product_description %}
-        <div class="pf-v5-c-form__field">
-            <label class="pf-v5-c-form__label"">
-                            <span class=" pf-v5-c-form__label-text">Product description</span>
-            </label>
-            <div class="pf-v5-c-form__field-control">
-                {{ product.product_description }}
-            </div>
-        </div>
-        {% endif %}
+[Deprecation] Listener added for a 'DOMNodeInserted' mutation event. This event type is deprecated, and will be removed from this browser VERY soon. Usage of this event listener will cause performance issues today, and represents a large risk of imminent site breakage. Consider using MutationObserver instead. See https://chromestatus.com/feature/5083947249172480 for more information.
