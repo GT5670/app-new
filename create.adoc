@@ -1,0 +1,67 @@
+== Build an application
+
+On the {RHDHShortName} portal, select *Create*, and then select an appropriate template. For example, Quarkus Java - Trusted Application Pipeline.
+
+Building an application or microservice for your developers in {RHDHShortName} using the templates offered by {ProductShortName} is essentially only a three step process:
+
+* Provide application information
+
+* Provide application repository information
+
+* Provide deployment information
+
+[discrete]
+=== Provide application information
+
+. In the *Name* field, provide an application name. Your name may incorporate lowercase letters (a-z), numbers (0-9), and dashes (-), but it must start and end with a lowercase alphanumeric character. Examples of valid names are `my-name` or `abc-123`, and the length should range from 1 to 63 characters.
+
+. From the *Owner* dropdown list, select an appropriate RHDH component owner for this application. The default value is `user:guest`, which appears if no specific owner is registered in the system. If you have not registered an owner, retain the default `user:guest` selection. If needed, you have the option to replace `guest` with your username, personalizing ownership of the application.
+
+. Select *Next*. The system displays the Application Repository Information form.
+
+[discrete]
+=== Provide application repository information
+
+. From the *Host Type* dropdown list, select an appropriate repository host type.
+
+. In the *Repository Owner* field, enter name of the organization that owns the Git App you are using. This could be a personal user account, an organization, or a project within your organization.
+
+. In the *Repository Name* field, enter an appropriate repository name using characters restricted to A-Z, a-z, 0-9, underscore (_), and dashes (-). The system uses this information to name the repository that it creates on the host repository server.
+
+. In the *Repository Default Branch* field, enter the default branch for your repository. This field displays `main` by default you can choose to keep it the same.
+
+. In the *Repository Server* field, enter your on-prem host URL without the `HTTP` protocol and without the `.git` extension. For example, gitlab-gitlab.apps.cluster-ljg9z.sandbox219.opentlc.com.
+
+. From the *CI Provider* drop-down list, select the appropriate continuous integration (CI) tool that the system uses to build, test, and deploy the application.
+
++
+[]
+
+. Select *Next*. The system displays the Deployment Information form.
+
+[discrete]
+=== Provide deployment information
+
+. In the *Image Registry* field, enter your on-prem image registry URL without the `HTTP` protocol. For example, quay-tv2pb.apps.cluster-tv2pb.sandbox1194.opentlc.com.
+
+. In the *Image Organization* field, enter the image organization for the image registry you provided in the Step 1.
+
+. In the *Image Name* field, enter an appropriate image name following these guidelines: use only lowercase letters, dights, and separators. Separators include a period (.), up to two underscores (_), or one or more hyphens (-). For example, `my-app_1.2`.
+
++
+[NOTE]
+====
+You must ensure that the name does not start or end with a separator.
+====
+
+. In the *Deployment Namespace* field, enter the prefix for the namespaces or cluster where your intend to deploy your application. The system creates the actual namespaces as `rhtap-app-development`, `rhtap-app-stage`, and `rhtap-app-prod`.
+
++
+[NOTE]
+====
+`rhtap-app` is the default deployment namespace prefix. Cluster administrators have the option to customize this prefix. For instructions on how to customize the default deployment namespace prefix, refer to link:https://docs.redhat.com/en/documentation/red_hat_trusted_application_pipeline/{ProductVersion}/html/customizing_red_hat_trusted_application_pipeline[Customizing sample software templates].
+====
+
+. Select *Review* to review all the information that you added.
+
+. Select *Create*.
