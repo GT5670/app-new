@@ -22,7 +22,7 @@ Building an application or microservice for your developers in {RHDHShortName} u
 [discrete]
 === Provide application repository information
 
-. From the *Host Type* dropdown list, select an appropriate repository host type.
+. From the *Host Type* dropdown list, select an appropriate repository host type, *GitHub* or *GitLab*.
 
 . In the *Repository Owner* field, enter name of the organization that owns the Git App you are using. This could be a personal user account, an organization, or a project within your organization.
 
@@ -30,12 +30,24 @@ Building an application or microservice for your developers in {RHDHShortName} u
 
 . In the *Repository Default Branch* field, enter the default branch for your repository. This field displays `main` by default you can choose to keep it the same.
 
-. In the *Repository Server* field, enter your on-prem host URL without the `HTTP` protocol and without the `.git` extension. For example, gitlab-gitlab.apps.cluster-ljg9z.sandbox219.opentlc.com.
+. In the *Repository Server* field, specify the repository server.
+
+.. If you select *GitHub* as the *Host type*, the *Repository server* field is pre-populated with `github.com`. However, you can enter your on-prem host URL without the `HTTP` protocol and without the `.git` extension. For example, github-github.apps.cluster-ljg9z.sandbox219.opentlc.com.
+
+.. If you select *GitLab* as the *Host type*, the *Repository server* field is pre-populated with `gitlab.com`. However, you can enter your on-prem host URL without the `HTTP` protocol and without the `.git` extension. For example, gitlab-gitlab.apps.cluster-ljg9z.sandbox219.opentlc.com.
 
 . From the *CI Provider* drop-down list, select the appropriate continuous integration (CI) tool that the system uses to build, test, and deploy the application.
 
+.. If you select GitHub as the Host type, the *CI Provider* drop-down list displays Jenkins, Tekton, and GitHub Actions CI providers.
+
+.. If you select GitLab as the Host type, the *CI Provider* drop-down list displays Jenkins, Tekton, and GitLab CI as CI providers.
+
 +
-[]
+
+[NOTE]
+====
+If you select GitLab, you need to Configure GitLab CI.
+====
 
 . Select *Next*. The system displays the Deployment Information form.
 
@@ -64,4 +76,4 @@ You must ensure that the name does not start or end with a separator.
 
 . Select *Review* to review all the information that you added.
 
-. Select *Create*.
+. Select *Create*. 
